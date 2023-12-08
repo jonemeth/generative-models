@@ -1,0 +1,18 @@
+alpha: 0.5
+classification_weight: 34.0
+data_dim: 50
+first_layer_log_dir: logs/vae_svhn_pca/version_1
+gradient_clip_algorithm: null
+gradient_clip_val: null
+hidden_dims:
+- 500
+latent_dim: 50
+marginal_kl: true
+max_epochs: 3000
+num_batches: 200
+num_classes: 10
+num_sup: 1000
+num_total_samples: 68000
+pca_filename: datasets/svhn/pca_600_extra_seed1_n10000.npz
+px_type: NORMAL
+random_seed: 1

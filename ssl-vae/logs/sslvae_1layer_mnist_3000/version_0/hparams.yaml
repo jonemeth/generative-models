@@ -1,0 +1,18 @@
+alpha: 0.1
+classification_weight: 1.666666666666667
+data_dim: 784
+first_layer_log_dir: null
+gradient_clip_algorithm: null
+gradient_clip_val: null
+hidden_dims:
+- 500
+latent_dim: 50
+marginal_kl: true
+max_epochs: 3000
+num_batches: 200
+num_classes: 10
+num_sup: 3000
+num_total_samples: 50000
+pca_filename: null
+px_type: BERNOULLI
+random_seed: 0

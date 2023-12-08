@@ -1,0 +1,15 @@
+batch_size: 5000
+data_dim: 600
+gradient_clip_algorithm: value
+gradient_clip_val: 5.0
+hidden_dims:
+- 600
+- 600
+latent_dim: 50
+marginal_kl: true
+max_epochs: 5000
+num_total_samples: 604000
+pca_filename: datasets/svhn/pca_600_extra_seed0_n10000.npz
+px_type: NORMAL
+random_seed: 0
+use_svhn_extra: true
