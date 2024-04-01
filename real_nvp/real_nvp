@@ -1,0 +1,174 @@
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+import numpy as np
+from torch.utils.data import TensorDataset, DataLoader
+import torch
+
+from common.toy_data import get_gmm_samples, spiral_samples
+
+
+def log_normal_pdf(sample, mean, logvar):
+  log2pi = np.log(2. * np.pi)
+  return -.5 * ((sample - mean) ** 2. * torch.exp(-logvar) + logvar + log2pi)
+
+
+def log_standard_normal_pdf(sample):
+    log2pi = np.log(2. * np.pi)
+    return -.5 * (sample ** 2. + log2pi)
+
+
+class CouplingNN(torch.nn.Module):
+
+    def __init__(self, input_dim, hidden_multiplier = 4):
+        super().__init__()
+
+        self.nn = torch.nn.Sequential(
+            torch.nn.Linear(input_dim, hidden_multiplier*input_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_multiplier*input_dim, hidden_multiplier*input_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_multiplier*input_dim, 2*input_dim),
+        )
+
+    def forward(self, x):
+        x = self.nn(x)
+        log_s, t = x.chunk(2, dim=1)
+        return log_s, t
+
+
+class CouplingLayer(torch.nn.Module):
+    def __init__(self, input_dimensions, random_shuffle=False):
+        super().__init__()
+
+        self.nn = CouplingNN(input_dimensions//2)
+
+        self.random_shuffle = random_shuffle
+
+        if self.random_shuffle:
+            self.indices_forward = np.random.permutation(input_dimensions)
+            self.indices_inverse = np.argsort(self.indices_forward)
+
+    def forward(self, x):
+        if self.random_shuffle:
+            x = x[:, self.indices_forward]
+        else:
+            x = torch.flip(x, [1])
+
+        x_a, x_b = x.chunk(2, dim=1)
+
+        log_s, t = self.nn(x_b)
+
+        y_a = log_s.exp() * x_a + t
+        y_b = x_b
+        y = torch.cat([y_a, y_b], dim=1)
+
+        log_det = log_s.sum(dim=1)
+
+        return y, log_det
+
+    def inverse(self, y):
+        y_a, y_b = y.chunk(2, dim=1)
+
+        log_s, t = self.nn(y_b)
+
+        x_a = (y_a - t) / log_s.exp()
+        x_b = y_b
+        x = torch.cat([x_a, x_b], dim=1)
+
+        log_det = -log_s.sum(dim=1)
+
+        if self.random_shuffle:
+            x = x[:, self.indices_inverse]
+        else:
+            x = torch.flip(x, [1])
+
+        return x, log_det
+
+
+class RealNVP(torch.nn.Module):
+
+    def __init__(self, input_dimensions, num_coupling_layers, random_shuffle=False):
+        super().__init__()
+
+        self.input_dimensions = input_dimensions
+
+        self.coupling_layers = torch.nn.ModuleList(
+            [CouplingLayer(input_dimensions, random_shuffle) for _ in range(num_coupling_layers)]
+        )
+
+    def forward(self, z):
+        x = z
+        log_px = log_standard_normal_pdf(z).sum(dim=1)
+
+        for layer in self.coupling_layers:
+            x, ld = layer(x)
+            log_px -= ld
+
+        return x, log_px
+
+    def inverse(self, x):
+        z = x
+        log_px = 0
+
+        for layer in reversed(self.coupling_layers):
+            z, log_pz = layer.inverse(z)
+            log_px += log_pz
+
+        log_px += log_standard_normal_pdf(z).sum(dim=1)
+
+        return z, log_px
+
+    def sample(self, n, device):
+        return self.forward(torch.randn(n, self.input_dimensions, device=device))[0]
+
+
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # data_samples = get_gmm_samples(200)
+    data_samples = spiral_samples(500)
+
+    model = RealNVP(2, 32)
+    model.to(device)
+
+    batch_size = 128
+    dataset = TensorDataset(data_samples)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=2e-4, weight_decay=0.001)
+
+    num_epochs = 5000
+    pbar = tqdm(range(num_epochs))
+    for _ in pbar:
+        losses = []
+        for batch in dataloader:
+            batch = batch[0]
+            batch = batch.to(device)
+
+            optimizer.zero_grad(set_to_none=True)
+
+            loss = -model.inverse(batch)[1].mean()
+
+            loss.backward()
+            optimizer.step()
+
+            losses.append(loss.item())
+        avg_loss = np.mean(losses)
+        pbar.set_postfix({"loss": f"{avg_loss:.4f}"})
+
+
+    model_samples = model.sample(len(data_samples), device).detach().cpu().numpy()
+
+    _, axes = plt.subplots(1, 2)
+    plot_range = 1.5
+    for ax in axes:
+        ax.set_aspect(1)
+        ax.set_xlim(-plot_range, plot_range)
+        ax.set_ylim(-plot_range, plot_range)
+
+    axes[0].scatter(data_samples[:, 0], data_samples[:, 1])
+    axes[1].scatter(model_samples[:, 0], model_samples[:, 1])
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()

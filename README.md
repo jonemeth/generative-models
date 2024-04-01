@@ -33,3 +33,11 @@ I could achieve reliable results only when I increased the classification weight
 |:---:|
 | *(The original samples are in the first column)* |
 
+
+## Score Matching, NCE, RealNVP
+
+#### Score Matching
+| ![Score Matching results](score-matching/score_matching.png) |
+
+#### NCE
+| ![NCE results](nce/nce.png) |
